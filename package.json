@@ -1,0 +1,23 @@
+{
+  "name": "example-publish-wav",
+  "author": "LiveKit",
+  "private": true,
+  "description": "",
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "build": "tsc --incremental",
+    "lint": "eslint -f unix \"**/*.ts\""
+  },
+  "keywords": [],
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@livekit/rtc-node": "^0.13.14",
+    "dotenv": "^16.4.5",
+    "livekit-server-sdk": "^2.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.4",
+    "tsx": "^4.7.1"
+  }
+}
