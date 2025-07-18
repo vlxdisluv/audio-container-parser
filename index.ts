@@ -1,216 +1,156 @@
-import {
-  AudioFrame,
-  AudioSource,
-  LocalAudioTrack,
-  Room,
-  TrackPublishOptions,
-  TrackSource,
-  dispose,
-} from '@livekit/rtc-node';
-import { config } from 'dotenv';
+import { AudioFrame, AudioSource, LocalAudioTrack, Room, TrackPublishOptions, TrackSource, dispose } from '@livekit/rtc-node';
 import { AccessToken } from 'livekit-server-sdk';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { promises as fs } from 'fs';
+import { config } from 'dotenv';
+import { promises as fsPromises, createReadStream } from 'fs';
+import { join } from 'path';
+
 config();
-import { createReadStream } from 'fs';
-// console.log('1');
-// // create access token from API credentials
-// const token = new AccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET, {
-//   identity: 'sender',
-// });
-// console.log('2');
-// token.addGrant({
-//   room: 'example-room',
-//   roomJoin: true,
-//   roomCreate: true,
-//   canPublish: true,
-// });
-// const jwt = await token.toJwt();
-// // set up room
-// const room = new Room();
-// await room.connect(process.env.LIVEKIT_URL, jwt, { autoSubscribe: true, dynacast: true });
-//
-// // read relevant metadata from wav file
-// // this example assumes valid encoding little-endian
-// const sample = readFileSync(join(process.cwd(), './speex.wav'));
-// const channels = sample.readUInt16LE(22);
-// const sampleRate = sample.readUInt32LE(24);
-// const dataSize = sample.readUInt32LE(40) / 2;
-//
-// console.log('channels', channels);
-// console.log('sampleRate', sampleRate);
-// console.log('dataSize', dataSize)
-//
-// // set up audio track
-// const source = new AudioSource(sampleRate, channels);
-// const track = LocalAudioTrack.createAudioTrack('audio', source);
-// const options = new TrackPublishOptions();
-// const buffer = new Int16Array(sample.buffer);
-// options.source = TrackSource.SOURCE_MICROPHONE;
-// await room.localParticipant.publishTrack(track, options).then((pub) => pub.waitForSubscription());
-//
-// let written = 44; // start of WAVE data stream
-// const FRAME_DURATION = 1; // write 1s of audio at a time
-// const numSamples = sampleRate * FRAME_DURATION;
-// while (written < dataSize) {
-//   const available = dataSize - written;
-//   const frameSize = Math.min(numSamples, available);
-//
-//   const frame = new AudioFrame(
-//     buffer.subarray(written, written + frameSize),
-//     sampleRate,
-//     channels,
-//     Math.trunc(frameSize / channels),
-//   );
-//   await source.captureFrame(frame);
-//   written += frameSize;
-// }
-// await source.waitForPlayout();
-// // release resources allocated for audio publishing
-//
-// console.log('track', track);
-// // await track.close(); // this deallocate source as well
-//
-// await room.disconnect();
-//
-// // disposes all resources, only use if no more sessions are expected
-// await dispose();
 
-// import { createReadStream } from 'fs';
-// import {
-//   AudioFrame,
-//   AudioSource,
-//   dispose,
-// } from '@livekit/rtc-node';
-// import { promises as fs } from 'fs';
-// import { join } from 'path';
+// Constants for WAV parsing (PCM data)
+const WAV_HEADER_BYTES = 44;
+const FRAME_DURATION_MS = 1000; // duration of each PCM frame in milliseconds
 
-const token = new AccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET, {
-  identity: 'sender',
-});
-token.addGrant({
-  room: 'example-room',
-  roomJoin: true,
-  roomCreate: true,
-  canPublish: true,
-});
-const jwt = await token.toJwt();
-// set up room
-const room = new Room();
-await room.connect(process.env.LIVEKIT_URL, jwt, { autoSubscribe: true, dynacast: true });
+/**
+ * Создает и подключает LiveKit Room
+ */
+async function createLiveKitRoom(roomName: string): Promise<Room> {
+  const token = new AccessToken(
+      process.env.LIVEKIT_API_KEY!,
+      process.env.LIVEKIT_API_SECRET!,
+      { identity: 'sender' }
+  );
 
+  token.addGrant({
+    room: roomName,
+    roomJoin: true,
+    roomCreate: true,
+    canPublish: true,
+  });
 
-async function streamWavAsOpusFrames(filePath: string) {
-  // Сначала читаем заголовок, чтобы узнать sampleRate, channels и байтовую глубину
-  const header = Buffer.alloc(44);
-  const fd = await fs.open(filePath, 'r');
-  await fd.read(header, 0, 44, 0);
-  await fd.close();
-
-  const channels   = header.readUInt16LE(22);
-  const sampleRate = header.readUInt32LE(24);
-  const bitDepth   = header.readUInt16LE(34);
-  const bytesPerSample = bitDepth / 8;
-
-  console.log({
-    channels, sampleRate, bitDepth, bytesPerSample
-  })
-
-//   const channels2 = header.readUInt16LE(22);
-// const sampleRate2 = header.readUInt32LE(24);
-// const dataSize2 = header.readUInt32LE(40) / 2;
-// console.log({
-//   channels2, sampleRate2, dataSize2,
-// })
-
-  // Размер 20 ms фрейма в байтах (по спецификации: RFC 7587 для Opus, little-endian PCM)
-  // const FRAME_DURATION = 1; // write 1s of audio at a time
-  // const numSamples = sampleRate * FRAME_DURATION;
-
-  const frameDurationMs = 1000;
-  const samplesPerFrame = (sampleRate * frameDurationMs) / 1000;
-  const frameSizeBytes   = samplesPerFrame * channels * bytesPerSample; // 3840
-
-  console.log({
-    frameDurationMs,
-    // frameDurationMs,
-    frameSizeBytes
-  })
-
-  // const FRAME_DURATION = 1; // write 1s of audio at a time
-  // const numSamples = sampleRate * FRAME_DURATION;
-  // const frameSize = samplesPerFrame * channels * bytesPerSample;
-
-  // set up audio track
-  const source = new AudioSource(sampleRate, channels);
-  const track = LocalAudioTrack.createAudioTrack('audio', source);
-  const options = new TrackPublishOptions();
-  options.source = TrackSource.SOURCE_MICROPHONE;
-  await room.localParticipant.publishTrack(track, options).then((pub) => pub.waitForSubscription());
-
-
-  // Поток чтения, highWaterMark = хотя бы frameSize, чтобы получать не слишком маленькие чанки
-  const stream = createReadStream(filePath, { start: 44, highWaterMark: frameSizeBytes });
-  let buf = Buffer.alloc(0);
-
-
-  for await (const chunk of stream) {
-    buf = Buffer.concat([buf, chunk]);
-    // Пока в буфере есть хотя бы один полный кадр
-    while (buf.length >= frameSizeBytes) {
-      // вырезаем ровно frameSize байт
-      const frameBuf = buf.subarray(0, frameSizeBytes);
-      buf = buf.subarray(frameSizeBytes);
-
-      // конвертируем Buffer в Int16Array (PCM16 little-endian)
-      // const int16 = new Int16Array(
-      //     frameBuf.buffer,
-      //     // frameBuf.byteOffset,
-      //     // frameBuf.byteLength / Int16Array.BYTES_PER_ELEMENT,
-      // );
-
-      const int16 = new Int16Array(
-          frameBuf.buffer,               // общий ArrayBuffer
-          frameBuf.byteOffset,           // смещение в нём, откуда начинаются ваши байты
-          samplesPerFrame * channels     // длина в сэмплах (samplesPerChannel * channels)
-      );
-
-
-      const frame = new AudioFrame(
-          int16,
-          sampleRate,
-          channels,
-          samplesPerFrame
-          // Math.trunc(samplesPerFrame / channels),
-      );
-
-      console.log({
-        frameDurationMs,
-        samplesPerFrame,
-        frameSizeBytes,
-        int16Length: int16.length,
-        declaredSamplesPerChannel: samplesPerFrame
-      });
-
-      // Правильное создание AudioFrame по вашей структуре
-      // const frame = new AudioFrame(
-      //     slice,
-      //     sampleRate,
-      //     channels,
-      //     Math.trunc(frameSize / channels),
-      // );
-      await source.captureFrame(frame);
-    }
-  }
-
-  await source.waitForPlayout();
-  // await track.close();
-  await room.disconnect();
-
-  await dispose();
+  const jwt = await token.toJwt();
+  const room = new Room();
+  await room.connect(process.env.LIVEKIT_URL!, jwt, {
+    autoSubscribe: true,
+    dynacast: true,
+  });
+  return room;
 }
 
-// Использование
-const wavPath = join(process.cwd(), 'speex.wav');
-streamWavAsOpusFrames(wavPath).catch(console.error);
+/**
+ * Читает заголовок WAV и возвращает метаданные PCM
+ */
+async function readWavMetadata(filePath: string): Promise<{
+  sampleRate: number;
+  channels: number;
+  bytesPerSample: number;
+  dataOffset: number;
+}> {
+  const headerBuffer = Buffer.alloc(WAV_HEADER_BYTES);
+  const fileHandle = await fsPromises.open(filePath, 'r');
+  await fileHandle.read(headerBuffer, 0, WAV_HEADER_BYTES, 0);
+  await fileHandle.close();
+
+  const channels = headerBuffer.readUInt16LE(22);
+  const sampleRate = headerBuffer.readUInt32LE(24);
+  const bitDepth = headerBuffer.readUInt16LE(34);
+  const bytesPerSample = bitDepth / 8;
+
+  return { sampleRate, channels, bytesPerSample, dataOffset: WAV_HEADER_BYTES };
+}
+
+/**
+ * Публикует аудио-трек в LiveKit и возвращает источник для PCM
+ */
+async function publishAudioTrack(
+    room: Room,
+    sampleRate: number,
+    channelCount: number
+): Promise<AudioSource> {
+  const audioSource = new AudioSource(sampleRate, channelCount);
+  const track = LocalAudioTrack.createAudioTrack('audio', audioSource);
+
+  const publishOptions = new TrackPublishOptions();
+  publishOptions.source = TrackSource.SOURCE_MICROPHONE;
+
+  await room.localParticipant
+      .publishTrack(track, publishOptions)
+      .then((publication) => publication.waitForSubscription());
+
+  return audioSource;
+}
+
+/**
+ * Читает WAV-файл и стримит PCM-фреймы в LiveKit
+ */
+async function streamWavAsPcmFrames(filePath: string, roomName: string): Promise<void> {
+  const room = await createLiveKitRoom(roomName);
+
+  try {
+    const { sampleRate, channels, bytesPerSample, dataOffset } = await readWavMetadata(filePath);
+    const samplesPerFrame = (sampleRate * FRAME_DURATION_MS) / 1000;
+    const frameSizeBytes = samplesPerFrame * channels * bytesPerSample;
+
+    console.log({ sampleRate, channels, bytesPerSample, frameSizeBytes });
+
+    const audioSource = await publishAudioTrack(room, sampleRate, channels);
+
+    const pcmStream = createReadStream(filePath, { start: dataOffset, highWaterMark: frameSizeBytes * 2 });
+    let bufferAccumulator = Buffer.alloc(0);
+
+    for await (const chunk of pcmStream) {
+      bufferAccumulator = Buffer.concat([bufferAccumulator, chunk]);
+
+      while (bufferAccumulator.length >= frameSizeBytes) {
+        // Выделяем фрейм и копируем данные, чтобы не ссылаться на общий буфер
+        const frameBuffer = bufferAccumulator.subarray(0, frameSizeBytes);
+        bufferAccumulator = bufferAccumulator.subarray(frameSizeBytes);
+        const frameCopy = Buffer.from(frameBuffer);
+
+        const totalSamples = frameCopy.byteLength / Int16Array.BYTES_PER_ELEMENT;
+        const samplesPerChannel = totalSamples / channels;
+
+        const pcmView = new Int16Array(
+            frameCopy.buffer,
+            frameCopy.byteOffset,
+            totalSamples
+        );
+
+        const audioFrame = new AudioFrame(
+            pcmView,
+            sampleRate,
+            channels,
+            samplesPerChannel
+        );
+
+        await audioSource.captureFrame(audioFrame);
+      }
+
+      console.log('Buffer remaining:', bufferAccumulator.length);
+    }
+
+    // Публикация оставшихся сэмплов, если они есть
+    if (bufferAccumulator.length > 0) {
+      const partialCopy = Buffer.from(bufferAccumulator);
+      const totalSamples = partialCopy.byteLength / Int16Array.BYTES_PER_ELEMENT;
+      const samplesPerChannel = totalSamples / channels;
+      const partialView = new Int16Array(
+          partialCopy.buffer,
+          partialCopy.byteOffset,
+          totalSamples
+      );
+
+      await audioSource.captureFrame(
+          new AudioFrame(partialView, sampleRate, channels, samplesPerChannel)
+      );
+    }
+
+    await audioSource.waitForPlayout();
+  } finally {
+    await room.disconnect();
+    await dispose();
+  }
+}
+
+// Пример использования
+const wavFilePath = join(process.cwd(), 'speex.wav');
+streamWavAsPcmFrames(wavFilePath, 'ejh1-45qs').catch(console.error);
