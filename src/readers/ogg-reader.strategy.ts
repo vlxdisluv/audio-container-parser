@@ -5,27 +5,14 @@ import {OpusDecoder} from "opus-decoder";
 
 
 export class OggReader extends AudioReader{
-    FRAME_DURATION_MS = 1000;
-
     public async *streamFrames(): AsyncIterable<AudioFrame> {
-        const { sampleRate, channels, bytesPerSample, dataOffset } = await this.getMetadata();
-console.log({ sampleRate, channels, bytesPerSample, dataOffset });
+        const { sampleRate, channels } = await this.getMetadata();
 
-console.log('channels', channels)
         const decoder = new OpusDecoder({
             channels: channels,
             sampleRate: sampleRate as 48000,
         });
-
         await decoder.ready;
-
-        console.log('decoder', decoder)
-
-        const samplesPerFrame = (sampleRate * this.FRAME_DURATION_MS) / 1000;
-        const frameSizeBytes = samplesPerFrame * channels * bytesPerSample;
-
-        console.log('samplesPerFrame', samplesPerFrame)
-        console.log('frameSizeBytes', frameSizeBytes);
 
         // Создаем поток чтения данных после заголовка
         const opusStream = createReadStream(this.filePath);
@@ -59,6 +46,13 @@ console.log('channels', channels)
                 const pageBuf = bufferAccumulator.slice(0, pageSize);
                 bufferAccumulator = bufferAccumulator.slice(pageSize);
 
+                const pageSeq = pageBuf.readUInt32LE(18);
+                if (pageSeq < 2) {
+                    // чтобы остатки служебных пакетов не попали в continuationBuffer
+                    continuationBuffer = Buffer.alloc(0);
+                    continue;
+                }
+
                 // д) флаг «продолжение пакета»
                 const headerType = pageBuf.readUInt8(5);
                 let isContinued  = Boolean(headerType & 0x01);
@@ -85,23 +79,11 @@ console.log('channels', channels)
                     if (lace < 255) {
                         // конец пакета
                         const opusPacket = Buffer.concat(fragBufs);
-
-                        console.log('opusPacket', opusPacket);
-
-
-                        // 1) Распаковали float‑данные
                         const { channelData, samplesDecoded, sampleRate } = decoder.decodeFrame(opusPacket);
 
-                        // 2) Сверили количество каналов
                         const channels = channelData.length;
-
-                        // 3) Интерливим + конвертим во 16‑бит целые
                         const pcmView = float32ToInt16Interleaved(channelData, samplesDecoded);
 
-                        // 4) Обёртываем в Buffer
-                        // const pcmBuffer = Buffer.from(pcmView.buffer);
-
-                        // 5) Шлём в LiveKit
                         yield new AudioFrame(
                             pcmView,      // Buffer с Int16-PCM
                             sampleRate,     // 48000
@@ -109,13 +91,6 @@ console.log('channels', channels)
                             samplesDecoded  // 960
                         );
 
-                        // const { channelData, samplesDecoded, sampleRate } = decoder.decodeFrame(opusPacket);
-                        // const pcmView = float32ToInt16Interleaved(channelData, samplesDecoded);
-
-
-                        // yield new AudioFrame(pcmView, sampleRate, channels, samplesDecoded);
-                        // console.log({channelData: channelData.length, samplesDecoded, sampleRate});
-                        // handleOpusPacket(opusPacket);  // <-- здесь «отдаём» сырую пачку байт
                         fragBufs = [];
                         isContinued = false;           // далее уже не продолжаем из прошлого
                     }
@@ -127,10 +102,6 @@ console.log('channels', channels)
                 }
             }
         }
-
-            //
-            // const arr = new Int16Array(Buffer.alloc(0));
-            // yield new AudioFrame(arr, 16000, 1, 16000);
     }
 
 
@@ -145,6 +116,7 @@ console.log('channels', channels)
 
         const magic = buf.slice(headerOffset, headerOffset + 8).toString('ascii');
 
+        console.log("magic", magic);
         if (magic !== 'OpusHead') {
             throw new Error('Неизвестный или неподдерживаемый кодек: ' + magic);
         }
@@ -155,40 +127,6 @@ console.log('channels', channels)
         const bytesPerSample = 16 / 8;
 
         return { sampleRate: sampleRate, channels: channels, bytesPerSample, dataOffset: 0 };
-
-        //
-        // console.log('magic', magic2);
-        // const packetType = buf.readUInt8(headerOffset);
-        // if (packetType !== 1) {
-        //     throw new Error('Ожидали идентификационный пакет Vorbis (тип 1), а получили ' + packetType);
-        // }
-        //
-        // const magic = buf.slice(headerOffset + 1, headerOffset + 1 + 8).toString('ascii');
-        //
-        // if (magic.startsWith('vorbis')) {
-        //     const version = buf.readUInt32LE(headerOffset + 7);
-        //     if (version !== 0) {
-        //         throw new Error('Unsupported Vorbis version ' + version);
-        //     }
-        //
-        //     const channels   = buf.readUInt8(headerOffset + 11);
-        //     const sampleRate = buf.readUInt32LE(headerOffset + 12);
-        //     const bytesPerSample = 16 / 8;
-        //
-        //     return { sampleRate: sampleRate, channels: channels, bytesPerSample, dataOffset: 0 };
-        // }
-        //
-        // if (magic === 'OpusHead') {
-        //     const channels   = buf.readUInt8(headerOffset + 9);
-        //     const sampleRate = buf.readUInt32LE(headerOffset + 12);
-        //
-        //     const bytesPerSample = 16 / 8;
-        //
-        //     return { sampleRate: sampleRate, channels: channels, bytesPerSample, dataOffset: 0 };
-        // }
-        //
-        //
-        // throw new Error('Неизвестный или неподдерживаемый кодек: ' + magic);
     }
 }
 

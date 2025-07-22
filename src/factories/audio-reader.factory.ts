@@ -1,7 +1,5 @@
 import {WavReader} from "../readers/wav-reader.strategy";
 import {AudioReader} from "../readers/audio-reader.base";
-// import {OggReader} from "../readers/ogg-reader.strategy";
-import {OggReaderV2} from "../readers/ogg-reader-v2.strategy";
 import {OggReader} from "../readers/ogg-reader.strategy";
 
 export class AudioReaderFactory {
