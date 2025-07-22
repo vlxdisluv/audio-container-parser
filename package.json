@@ -4,8 +4,9 @@
   "private": true,
   "description": "",
   "type": "module",
-  "main": "index.ts",
+  "main": "src/index.ts",
   "scripts": {
+    "dev": "tsx -r dotenv/config src/index.ts",
     "build": "tsc --incremental",
     "lint": "eslint -f unix \"**/*.ts\""
   },
@@ -14,7 +15,8 @@
   "dependencies": {
     "@livekit/rtc-node": "^0.13.14",
     "dotenv": "^16.4.5",
-    "livekit-server-sdk": "^2.13.0"
+    "livekit-server-sdk": "^2.13.0",
+    "opus-decoder": "^0.7.10"
   },
   "devDependencies": {
     "@types/node": "^20.10.4",
