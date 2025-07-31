@@ -6,6 +6,7 @@ export class WavReader extends AudioReader{
     WAV_HEADER_BYTES = 44;
     FRAME_DURATION_MS = 1000;
 
+
     public async *streamFrames(): AsyncIterable<AudioFrame> {
         // Извлекаем метаданные WAV
         const { sampleRate, channels, bytesPerSample, dataOffset } = await this.getMetadata();
@@ -43,6 +44,9 @@ export class WavReader extends AudioReader{
         }
     }
 
+    public async *streamOpusFrames(): AsyncIterable<Buffer> {
+        throw new Error('Not implemented');
+    }
     /**
      * Reads a WAV headers and returns PCM metadata
      */

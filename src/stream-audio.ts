@@ -6,7 +6,7 @@ async function createLiveKitRoom(roomName: string): Promise<Room> {
     const token = new AccessToken(
         process.env.LIVEKIT_API_KEY!,
         process.env.LIVEKIT_API_SECRET!,
-        { identity: 'sender' }
+        { identity: 'sender2' }
     );
 
     token.addGrant({

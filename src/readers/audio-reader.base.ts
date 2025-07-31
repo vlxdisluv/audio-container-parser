@@ -12,4 +12,6 @@ export abstract class AudioReader {
 
     abstract streamFrames(): AsyncIterable<AudioFrame>;
     abstract getMetadata(): Promise<IAudioMetadata>
+
+    abstract streamOpusFrames(): AsyncIterable<Buffer>;
 }

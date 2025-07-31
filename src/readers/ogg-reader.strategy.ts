@@ -2,7 +2,16 @@ import {AudioReader, IAudioMetadata} from "./audio-reader.base";
 import {AudioFrame} from "@livekit/rtc-node";
 import {createReadStream, promises as fsPromises} from "fs";
 import {OpusDecoder} from "opus-decoder";
+import {createWriteStream} from "node:fs";
+import {fileURLToPath} from "node:url";
+import { dirname, join } from 'path'
 
+// const __filename = fileURLToPath(import.meta.url)
+// const __dirname  = dirname(__filename)
+//
+// const outPath = join(__dirname, 'output.bin')
+//
+// const writeStream = createWriteStream(outPath);
 
 export class OggReader extends AudioReader{
     public async *streamFrames(): AsyncIterable<AudioFrame> {
@@ -103,6 +112,118 @@ export class OggReader extends AudioReader{
             }
         }
     }
+
+    public async *streamOpusFrames(): AsyncIterable<Buffer> {
+        const { sampleRate, channels } = await this.getMetadata();
+
+        const decoder = new OpusDecoder({
+            channels: channels,
+            sampleRate: sampleRate as 48000,
+        });
+        await decoder.ready;
+
+        // Создаем поток чтения данных после заголовка
+        const opusStream = createReadStream(this.filePath);
+        let bufferAccumulator = Buffer.alloc(0);        // хранит «хвост» из непроцессированных байт
+        let continuationBuffer = Buffer.alloc(0);
+
+        for await (const chunk of opusStream) {
+            bufferAccumulator = Buffer.concat([bufferAccumulator, chunk]);
+
+            // пока в аккумуляторе есть хотя бы минимальный заголовок
+            while (bufferAccumulator.length >= 27) {
+                // а) проверяем сигнатуру
+                if (bufferAccumulator.toString('ascii', 0, 4) !== 'OggS') {
+                    const idx = bufferAccumulator.indexOf('OggS');
+                    if (idx < 0) { bufferAccumulator = Buffer.alloc(0); break; }
+                    bufferAccumulator = bufferAccumulator.slice(idx);
+                }
+
+                // б) сколько сегментов
+                const segmentCount = bufferAccumulator.readUInt8(26);
+                const headerSize   = 27 + segmentCount;
+                if (bufferAccumulator.length < headerSize) break; // ждём доп. байты
+
+                // в) сегментная таблица и длина данных
+                const segmentTable = bufferAccumulator.slice(27, headerSize);
+                const dataSize     = Array.from(segmentTable).reduce((s, v) => s + v, 0);
+                const pageSize     = headerSize + dataSize;
+                if (bufferAccumulator.length < pageSize) break;   // ждём доп. байты
+
+                // г) извлекаем полную страницу и обрезаем аккумулятор
+                const pageBuf = bufferAccumulator.slice(0, pageSize);
+                bufferAccumulator = bufferAccumulator.slice(pageSize);
+
+                const pageSeq = pageBuf.readUInt32LE(18);
+                if (pageSeq < 2) {
+                    // чтобы остатки служебных пакетов не попали в continuationBuffer
+                    continuationBuffer = Buffer.alloc(0);
+                    continue;
+                }
+
+                // д) флаг «продолжение пакета»
+                const headerType = pageBuf.readUInt8(5);
+                let isContinued  = Boolean(headerType & 0x01);
+
+                // е) payload сразу после заголовка
+                const payload = pageBuf.slice(headerSize);
+
+                // ж) разбираем лейсы на отдельные пакеты
+                let offset   = 0;
+                let fragBufs = [];  // части собираемого пакета
+                for (let i = 0; i < segmentCount; i++) {
+                    const lace = segmentTable[i];
+                    const seg  = payload.slice(offset, offset + lace);
+                    offset += lace;
+
+                    if (isContinued && fragBufs.length === 0) {
+                        // первый пакет страницы дополняем тем, что осталось
+                        fragBufs.push(Buffer.concat([continuationBuffer, seg]));
+                        continuationBuffer = Buffer.alloc(0);
+                    } else {
+                        fragBufs.push(seg);
+                    }
+
+                    if (lace < 255) {
+                        // конец пакета
+                        const opusFrame = Buffer.concat(fragBufs);
+                        // const { channelData, samplesDecoded, sampleRate } = decoder.decodeFrame(opusFrame);
+
+                        // const pcmView = float32ToInt16Interleaved(channelData, samplesDecoded);
+                        // console.log('pcmView', pcmView);
+
+
+                        // writeStream.write(opusFrame);
+
+                        yield opusFrame;
+                        //
+                        // const channels = channelData.length;
+                        // const pcmView = float32ToInt16Interleaved(channelData, samplesDecoded);
+                        //
+                        // yield new AudioFrame(
+                        //     pcmView,      // Buffer с Int16-PCM
+                        //     sampleRate,     // 48000
+                        //     channels,       // 1 или 2
+                        //     samplesDecoded  // 960
+                        // );
+
+                        fragBufs = [];
+                        isContinued = false;           // далее уже не продолжаем из прошлого
+                    }
+                }
+
+                // з) если последний сегмент = 255, пакет продолжается на следующей странице
+                if (segmentTable[segmentCount - 1] === 255) {
+                    continuationBuffer = Buffer.concat(fragBufs);
+                }
+            }
+        }
+
+        // writeStream.end(() => {
+        //     console.log('Запись завершена');
+        // });
+    }
+
 
 
     public async getMetadata(): Promise<IAudioMetadata> {
