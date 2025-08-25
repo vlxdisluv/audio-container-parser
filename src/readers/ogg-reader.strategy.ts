@@ -113,6 +113,7 @@ export class OggReader extends AudioReader{
         }
     }
 
+// TypeScript
     public async *streamOpusFrames(): AsyncIterable<Buffer> {
         const { sampleRate, channels } = await this.getMetadata();
 
@@ -122,7 +123,6 @@ export class OggReader extends AudioReader{
         });
         await decoder.ready;
 
-        // Создаем поток чтения данных после заголовка
         const opusStream = createReadStream(this.filePath);
         let bufferAccumulator = Buffer.alloc(0);        // хранит «хвост» из непроцессированных байт
         let continuationBuffer = Buffer.alloc(0);
@@ -170,7 +170,7 @@ export class OggReader extends AudioReader{
 
                 // ж) разбираем лейсы на отдельные пакеты
                 let offset   = 0;
-                let fragBufs = [];  // части собираемого пакета
+                let fragBufs: Buffer[] = [];  // части собираемого пакета
                 for (let i = 0; i < segmentCount; i++) {
                     const lace = segmentTable[i];
                     const seg  = payload.slice(offset, offset + lace);
@@ -186,26 +186,25 @@ export class OggReader extends AudioReader{
 
                     if (lace < 255) {
                         // конец пакета
-                        const opusFrame = Buffer.concat(fragBufs);
-                        // const { channelData, samplesDecoded, sampleRate } = decoder.decodeFrame(opusFrame);
+                        const opusPacket = Buffer.concat(fragBufs);
 
-                        // const pcmView = float32ToInt16Interleaved(channelData, samplesDecoded);
-                        // console.log('pcmView', pcmView);
+                        // Метрики пакета: длительность, оценочный битрейт, каналы
+                        try {
+                            const { samplesDecoded } = decoder.decodeFrame(opusPacket);
+                            const durationMs = samplesDecoded / (sampleRate / 1000); // обычно 2.5/5/10/20/40/60 мс
+                            const sizeBytes  = opusPacket.length;
+                            const bitrateKbps = (sizeBytes * 8) / (durationMs / 1000) / 1000;
 
+                            console.log(
+                                `Opus packet: size=${sizeBytes} bytes, duration≈${durationMs.toFixed(2)} ms, bitrate≈${bitrateKbps.toFixed(1)} kbps, channels=${channels}, sampleRate=${sampleRate}`
+                            );
+                        } catch (e) {
+                            const msg = e instanceof Error ? e.message : String(e);
+                            console.warn(`Opus metrics decode failed: ${msg}`);
+                        }
 
-                        // writeStream.write(opusFrame);
-
-                        yield opusFrame;
-                        //
-                        // const channels = channelData.length;
-                        // const pcmView = float32ToInt16Interleaved(channelData, samplesDecoded);
-                        //
-                        // yield new AudioFrame(
-                        //     pcmView,      // Buffer с Int16-PCM
-                        //     sampleRate,     // 48000
-                        //     channels,       // 1 или 2
-                        //     samplesDecoded  // 960
-                        // );
+                        // отдаём пакет дальше
+                        yield opusPacket;
 
                         fragBufs = [];
                         isContinued = false;           // далее уже не продолжаем из прошлого
@@ -218,10 +217,6 @@ export class OggReader extends AudioReader{
                 }
             }
         }
-
-        // writeStream.end(() => {
-        //     console.log('Запись завершена');
-        // });
     }
 
 

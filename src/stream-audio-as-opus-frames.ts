@@ -4,7 +4,7 @@ import {AudioReaderFactory} from "./factories/audio-reader.factory";
 
 
 
-import WebSocket from 'ws';
+import WebSocket, {RawData} from 'ws';
 
 
 
@@ -30,6 +30,36 @@ function waitConnection(ws: WebSocket): Promise<void> {
         ws.once('open', onOpen);
         ws.once('error', onError);
     });
+}
+
+function sessionJoin(ws: WebSocket): Promise<{ callId: string}> {
+    return new Promise((resolve, reject) => {
+            const wsOnMessage = (data: RawData, isBinary: boolean) => {
+                const raw = isBinary ? data : data.toString('utf8');
+                const msg = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                console.log('wsOnMessage!', msg);
+
+               if (msg.event === 'session.ready') {
+                   console.log('session.ready', msg.data);
+                   resolve(msg.data);
+               }
+            }
+
+            const eminJoinSession = () => {
+                const payload = {
+                    event: 'session.join',
+                    data: {
+                        campaignId: 'ba06d5a6-5e4d-4d88-b7c0-aebb95954360',
+                        customer: { name: 'John' },
+                    },
+                };
+                console.log(`[test] ->`, payload);
+                ws.send(JSON.stringify(payload));
+            }
+
+            ws.on('message', wsOnMessage)
+            eminJoinSession()
+    })
 }
 
 // ws.on('open', function open() {
@@ -98,9 +128,22 @@ function sendFrame(ws: WebSocket, frame: Buffer | ArrayBuffer): Promise<void> {
 }
 
 export async function streamAudioAsOpusFrames(filePath: string): Promise<void> {
+    const URL =
+        // 'ws://localhost:4002/v1/rtc';
+        'ws://localhost:4002/v1/rtc?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjb21wYW55SWQiOiJlNTE0OGYzYS00ZjEwLTQ3MWQtYTM0Yi05MjBiZjMyZmM5NzkiLCJpYXQiOjE3NTQwNDk4MjEsInN0cmF0ZWd5IjoiZXh0ZXJuYWwiLCJyb2xlIjoiYXBpIiwiZXhwIjoxOTI2ODQ5ODIxLCJhdWQiOiJleHRlcm5hbDphcGkiLCJqdGkiOiI1YmM1ZTZmOC1lNDcyLTQ1MjgtODNkYS03MzgxMjNhOTgxYzMifQ.Um7hLr8wa4G__JFn6ika6vT0-u7E1cUGRuekn5faaxw';
 
-    const ws = new WebSocket('ws://localhost:4002/v1/rtc');
+    const ws = new WebSocket(URL);
     await waitConnection(ws)
+
+    const sessionJoinResult =  await sessionJoin(ws);
+
+
+    await new Promise((resolve) => {
+        setTimeout(() => {
+            resolve(undefined);
+        }, 1000);
+    });
+    console.log('sessionJoinResult', sessionJoinResult);
 
     try {
         const audioReader =  AudioReaderFactory.create(filePath);
@@ -122,7 +165,6 @@ export async function streamAudioAsOpusFrames(filePath: string): Promise<void> {
         // await audioSource.waitForPlayout();
     } finally {
         ws.close();
-        // await room.disconnect();
-        // await dispose();
+
     }
 }
