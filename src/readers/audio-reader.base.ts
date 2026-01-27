@@ -1,17 +1,18 @@
-import {AudioFrame} from "@livekit/rtc-node";
+import type { ReaderOptions } from '../types/reader-options';
+import type { AudioFrame } from '../types/audio-frame';
+import type { CommonAudioMetadata } from '../types/audio-metadata';
 
-export interface IAudioMetadata {
-    sampleRate: number;
-    channels: number;
-    bytesPerSample: number,
-    dataOffset: number;
-}
-
-export abstract class AudioReader {
+export abstract class AudioReader<TMetadata extends CommonAudioMetadata = CommonAudioMetadata> {
     constructor(protected readonly filePath: string) {}
 
-    abstract streamFrames(): AsyncIterable<AudioFrame>;
-    abstract getMetadata(): Promise<IAudioMetadata>
+    /**
+     * Read audio frames as an async iterator of typed frames.
+     * Concrete strategies should implement this method.
+     */
+    abstract read(options?: ReaderOptions): AsyncIterable<AudioFrame>;
 
-    abstract streamOpusFrames(): AsyncIterable<Buffer>;
+    /**
+     * Returns decoded file metadata (strategy specific).
+     */
+    abstract getMetadata(): Promise<TMetadata>;
 }

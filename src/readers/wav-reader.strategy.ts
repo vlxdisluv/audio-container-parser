@@ -1,66 +1,116 @@
-import {AudioReader, IAudioMetadata} from "./audio-reader.base";
-import {AudioFrame} from "@livekit/rtc-node";
+import { AudioReader } from "./audio-reader.base";
 import {createReadStream, promises as fsPromises} from "fs";
 
-export class WavReader extends AudioReader{
-    WAV_HEADER_BYTES = 44;
-    FRAME_DURATION_MS = 1000;
+import type { AudioFrame } from '../types/audio-frame';
+import type { ReaderOptions } from '../types/reader-options';
+import type { WavMetadata } from '../types/audio-metadata';
 
+export class WavReader extends AudioReader<WavMetadata>{
+    private readonly DEFAULT_FRAME_DURATION_MS = 200;
 
-    public async *streamFrames(): AsyncIterable<AudioFrame> {
-        // Извлекаем метаданные WAV
-        const { sampleRate, channels, bytesPerSample, dataOffset } = await this.getMetadata();
-        const samplesPerFrame = (sampleRate * this.FRAME_DURATION_MS) / 1000;
+    public async *read(options?: ReaderOptions): AsyncIterable<AudioFrame> {
+        const { sampleRate, channels, bytesPerSample, bitsPerSample, dataOffset } = await this.getMetadata();
+        if (bytesPerSample == null || bitsPerSample == null || dataOffset == null) {
+            throw new Error('Invalid WAV metadata: missing required fields');
+        }
+
+        const frameDurationMs = options?.frameDurationMs ?? this.DEFAULT_FRAME_DURATION_MS;
+        const samplesPerFrame = Math.floor((sampleRate * frameDurationMs) / 1000);
         const frameSizeBytes = samplesPerFrame * channels * bytesPerSample;
 
-        // Создаем поток чтения данных после заголовка
-        const pcmStream = createReadStream(this.filePath, { start: dataOffset, highWaterMark: frameSizeBytes * 2 });
-        let bufferAccumulator = Buffer.alloc(0);
+        const pcmStream = createReadStream(this.filePath, { start: dataOffset, highWaterMark: Math.max(4096, frameSizeBytes * 2) });
+
+        let acc = Buffer.alloc(0);
+        let frameIndex = 0;
 
         for await (const chunk of pcmStream) {
-            bufferAccumulator = Buffer.concat([bufferAccumulator, chunk]);
+            acc = Buffer.concat([acc, chunk]);
 
-            while (bufferAccumulator.length >= frameSizeBytes) {
-                const frameBuffer = bufferAccumulator.subarray(0, frameSizeBytes);
-                bufferAccumulator = bufferAccumulator.subarray(frameSizeBytes);
-                const frameCopy = Buffer.from(frameBuffer);
+            while (acc.length >= frameSizeBytes) {
+                const frame = acc.subarray(0, frameSizeBytes);
+                acc = acc.subarray(frameSizeBytes);
 
-                const totalSamples = frameBuffer.byteLength / Int16Array.BYTES_PER_ELEMENT;
-                const samplesPerChannel = totalSamples / channels;
-                const pcmView = new Int16Array(frameCopy.buffer, frameCopy.byteOffset, totalSamples);
+                // Copy because stream reuses internal buffers
+                const data = Buffer.from(frame);
+                const timestamp = frameIndex * frameDurationMs;
+                frameIndex += 1;
 
-                yield new AudioFrame(pcmView, sampleRate, channels, samplesPerChannel);
+                yield {
+                    type: 'pcm',
+                    data,
+                    timestamp,
+                    sampleRate,
+                    channels,
+                    bitsPerSample
+                };
             }
         }
 
-        // Оставшиеся сэмплы
-        if (bufferAccumulator.length > 0) {
-            const partialCopy = Buffer.from(bufferAccumulator);
-            const totalSamples = partialCopy.byteLength / Int16Array.BYTES_PER_ELEMENT;
-            const samplesPerChannel = totalSamples / channels;
-
-            const partialView = new Int16Array(partialCopy.buffer, partialCopy.byteOffset, partialCopy.byteLength / Int16Array.BYTES_PER_ELEMENT);
-            yield new AudioFrame(partialView, sampleRate, channels, samplesPerChannel);
+        if (acc.length > 0) {
+            const timestamp = frameIndex * (options?.frameDurationMs ?? this.DEFAULT_FRAME_DURATION_MS);
+            yield {
+                type: 'pcm',
+                data: Buffer.from(acc),
+                timestamp,
+                sampleRate,
+                channels,
+                bitsPerSample
+            };
         }
     }
 
-    public async *streamOpusFrames(): AsyncIterable<Buffer> {
-        throw new Error('Not implemented');
-    }
-    /**
-     * Reads a WAV headers and returns PCM metadata
-     */
-    public async getMetadata(): Promise<IAudioMetadata> {
-        const headerBuffer = Buffer.alloc(this.WAV_HEADER_BYTES);
-        const fileHandle = await fsPromises.open(this.filePath, 'r');
-        await fileHandle.read(headerBuffer, 0, this.WAV_HEADER_BYTES, 0);
-        await fileHandle.close();
+    public async getMetadata(): Promise<WavMetadata> {
+        const buf = Buffer.alloc(44);
+        const fh = await fsPromises.open(this.filePath, 'r');
+        await fh.read(buf, 0, 44, 0);
+        await fh.close();
 
-        const channels = headerBuffer.readUInt16LE(22);
-        const sampleRate = headerBuffer.readUInt32LE(24);
-        const bitDepth = headerBuffer.readUInt16LE(34);
-        const bytesPerSample = bitDepth / 8;
+        // RIFF / WAVE
+        if (buf.toString('ascii', 0, 4) !== 'RIFF')
+            throw new Error('Not RIFF');
 
-        return { sampleRate, channels, bytesPerSample, dataOffset: this.WAV_HEADER_BYTES };
+        if (buf.toString('ascii', 8, 12) !== 'WAVE')
+            throw new Error('Not WAVE');
+
+        // fmt chunk
+        if (buf.toString('ascii', 12, 16) !== 'fmt ')
+            throw new Error('Invalid WAV: fmt chunk not found');
+
+        const fmtSize = buf.readUInt32LE(16);
+        if (fmtSize !== 16)
+            throw new Error('Unsupported WAV: extended fmt');
+
+        const audioFormat = buf.readUInt16LE(20);
+        const channels = buf.readUInt16LE(22);
+        const sampleRate = buf.readUInt32LE(24);
+        const bitsPerSample = buf.readUInt16LE(34);
+
+        let encoding: 'L16' | 'PCMU' | 'PCMA';
+
+        if (audioFormat === 1 && bitsPerSample === 16) {
+            encoding = 'L16';
+        } else if (audioFormat === 6 && bitsPerSample === 8) {
+            encoding = 'PCMU';
+        } else if (audioFormat === 7 && bitsPerSample === 8) {
+            encoding = 'PCMA';
+        } else {
+            throw new Error(
+                `Unsupported WAV format: audioFormat=${audioFormat}, bits=${bitsPerSample}`
+            );
+        }
+
+        // data chunk
+        if (buf.toString('ascii', 36, 40) !== 'data')
+            throw new Error('data chunk not found');
+
+        return {
+            encoding,
+            audioFormat,
+            sampleRate,
+            channels,
+            bitsPerSample,
+            bytesPerSample: bitsPerSample / 8,
+            dataOffset: 44
+        };
     }
 }

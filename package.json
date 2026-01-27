@@ -1,27 +1,53 @@
 {
-  "name": "example-publish-wav",
-  "author": "LiveKit",
-  "private": true,
-  "description": "",
+  "name": "audio-container-parser",
+  "version": "0.1.0",
+  "description": "Node.js TypeScript library that parses audio frames from common audio containers and exposes them.",
+  "author": "vlxdisluv",
+  "license": "MIT",
+  "private": false,
   "type": "module",
-  "main": "src/index.ts",
-  "scripts": {
-    "dev": "tsx -r dotenv/config src/index.ts",
-    "build": "tsc --incremental",
-    "lint": "eslint -f unix \"**/*.ts\""
+  "keywords": ["audio", "wav", "ogg", "opus", "pcm", "frames", "stream", "typescript", "node"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vlxdisluv/audio-container-parser.git"
   },
-  "keywords": [],
-  "license": "Apache-2.0",
+  "bugs": { "url": "https://github.com/vlxdisluv/audio-container-parser/issues" },
+  "homepage": "https://github.com/vlxdisluv/audio-container-parser#readme",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "examples:opus": "tsx examples/stream-opus.ts",
+    "examples:wav": "tsx examples/stream-wav.ts",
+    "examples:ws:opus": "dotenv -e .env -- tsx examples/ws/ws-stream-opus.ts",
+    "examples:ws:wav": "dotenv -e .env -- tsx examples/ws/ws-stream-wav.ts"
+  },
   "dependencies": {
-    "@livekit/rtc-node": "^0.13.14",
-    "@types/ws": "^8.18.1",
-    "dotenv": "^16.4.5",
-    "livekit-server-sdk": "^2.13.0",
-    "opus-decoder": "^0.7.10",
-    "ws": "^8.18.3"
+    "opus-decoder": "^0.7.10"
   },
   "devDependencies": {
     "@types/node": "^20.10.4",
-    "tsx": "^4.7.1"
+    "@types/ws": "^8.5.10",
+    "dotenv-cli": "^11.0.0",
+    "tsx": "^4.7.1",
+    "typescript": "^5.9.3",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
