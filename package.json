@@ -1,17 +1,29 @@
 {
   "name": "audio-container-parser",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Node.js TypeScript library that parses audio frames from common audio containers and exposes them.",
   "author": "vlxdisluv",
   "license": "MIT",
   "private": false,
   "type": "module",
-  "keywords": ["audio", "wav", "ogg", "opus", "pcm", "frames", "stream", "typescript", "node"],
+  "keywords": [
+    "audio",
+    "wav",
+    "ogg",
+    "opus",
+    "pcm",
+    "frames",
+    "stream",
+    "typescript",
+    "node"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/vlxdisluv/audio-container-parser.git"
   },
-  "bugs": { "url": "https://github.com/vlxdisluv/audio-container-parser/issues" },
+  "bugs": {
+    "url": "https://github.com/vlxdisluv/audio-container-parser/issues"
+  },
   "homepage": "https://github.com/vlxdisluv/audio-container-parser#readme",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -33,7 +45,7 @@
     "prepack": "npm run build",
     "ex:opus": "tsx examples/stream-opus.ts",
     "ex:wav": "tsx examples/stream-wav.ts",
-    "ws:l16":  "FILE=examples/assets/sample-speech.l16.16k.wav CODEC=l16  dotenv -e .env -- tsx examples/ws/ws-stream-wav.ts",
+    "ws:l16": "FILE=examples/assets/sample-speech.l16.16k.wav CODEC=l16  dotenv -e .env -- tsx examples/ws/ws-stream-wav.ts",
     "ws:pcmu": "FILE=examples/assets/sample-speech.pcmu.8k.wav CODEC=pcmu dotenv -e .env -- tsx examples/ws/ws-stream-wav.ts",
     "ws:pcma": "FILE=examples/assets/sample-speech.pcma.8k.wav CODEC=pcma dotenv -e .env -- tsx examples/ws/ws-stream-wav.ts"
   },
