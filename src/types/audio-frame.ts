@@ -10,7 +10,7 @@ export type OpusFrame = {
 };
 
 export type PcmFrame = {
-  type: 'pcm';
+  type: 'pcm' | 'pcmu' | 'pcma';
   data: Buffer; // interleaved PCM bytes
   timestamp?: number; // ms since start
   sampleRate: number;

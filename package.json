@@ -1,6 +1,6 @@
 {
   "name": "audio-container-parser",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Node.js TypeScript library that parses audio frames from common audio containers and exposes them.",
   "author": "vlxdisluv",
   "license": "MIT",
@@ -31,10 +31,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepack": "npm run build",
-    "examples:opus": "tsx examples/stream-opus.ts",
-    "examples:wav": "tsx examples/stream-wav.ts",
-    "examples:ws:opus": "dotenv -e .env -- tsx examples/ws/ws-stream-opus.ts",
-    "examples:ws:wav": "dotenv -e .env -- tsx examples/ws/ws-stream-wav.ts"
+    "ex:opus": "tsx examples/stream-opus.ts",
+    "ex:wav": "tsx examples/stream-wav.ts",
+    "ws:l16":  "FILE=examples/assets/sample-speech.l16.16k.wav CODEC=l16  dotenv -e .env -- tsx examples/ws/ws-stream-wav.ts",
+    "ws:pcmu": "FILE=examples/assets/sample-speech.pcmu.8k.wav CODEC=pcmu dotenv -e .env -- tsx examples/ws/ws-stream-wav.ts",
+    "ws:pcma": "FILE=examples/assets/sample-speech.pcma.8k.wav CODEC=pcma dotenv -e .env -- tsx examples/ws/ws-stream-wav.ts"
   },
   "dependencies": {
     "opus-decoder": "^0.7.10"

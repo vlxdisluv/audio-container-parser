@@ -3,7 +3,7 @@ import { AudioReaderFactory } from '../src';
 
 async function main() {
   // Use an example .wav file from repo
-  const filepath = join(process.cwd(), 'examples', 'assets', 'sample-speech.wav');
+  const filepath = join(process.cwd(), 'examples', 'assets', 'sample-speech.l16.16k.wav');
   const reader = AudioReaderFactory.create(filepath);
 
   let frames = 0;

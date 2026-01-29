@@ -60,57 +60,85 @@ export class WavReader extends AudioReader<WavMetadata>{
     }
 
     public async getMetadata(): Promise<WavMetadata> {
-        const buf = Buffer.alloc(44);
         const fh = await fsPromises.open(this.filePath, 'r');
-        await fh.read(buf, 0, 44, 0);
-        await fh.close();
+        try {
+            const riff = Buffer.alloc(12);
+            await fh.read(riff, 0, 12, 0);
+            if (riff.toString('ascii', 0, 4) !== 'RIFF') throw new Error('Not RIFF');
+            if (riff.toString('ascii', 8, 12) !== 'WAVE') throw new Error('Not WAVE');
 
-        // RIFF / WAVE
-        if (buf.toString('ascii', 0, 4) !== 'RIFF')
-            throw new Error('Not RIFF');
+            let offset = 12;
 
-        if (buf.toString('ascii', 8, 12) !== 'WAVE')
-            throw new Error('Not WAVE');
+            let audioFormat: number | undefined;
+            let channels: number | undefined;
+            let sampleRate: number | undefined;
+            let bitsPerSample: number | undefined;
+            let dataOffset: number | undefined;
 
-        // fmt chunk
-        if (buf.toString('ascii', 12, 16) !== 'fmt ')
-            throw new Error('Invalid WAV: fmt chunk not found');
+            while (true) {
+                const hdr = Buffer.alloc(8);
+                const { bytesRead } = await fh.read(hdr, 0, 8, offset);
+                if (bytesRead < 8) break;
 
-        const fmtSize = buf.readUInt32LE(16);
-        if (fmtSize !== 16)
-            throw new Error('Unsupported WAV: extended fmt');
+                const id = hdr.toString('ascii', 0, 4);
+                const size = hdr.readUInt32LE(4);
+                const chunkDataPos = offset + 8;
 
-        const audioFormat = buf.readUInt16LE(20);
-        const channels = buf.readUInt16LE(22);
-        const sampleRate = buf.readUInt32LE(24);
-        const bitsPerSample = buf.readUInt16LE(34);
+                if (id === 'fmt ') {
+                    const need = Math.min(size, 32);
+                    const fmt = Buffer.alloc(need);
+                    await fh.read(fmt, 0, need, chunkDataPos);
 
-        let encoding: 'L16' | 'PCMU' | 'PCMA';
+                    audioFormat = fmt.readUInt16LE(0);
+                    channels = fmt.readUInt16LE(2);
+                    sampleRate = fmt.readUInt32LE(4);
+                    bitsPerSample = fmt.readUInt16LE(14);
 
-        if (audioFormat === 1 && bitsPerSample === 16) {
-            encoding = 'L16';
-        } else if (audioFormat === 6 && bitsPerSample === 8) {
-            encoding = 'PCMU';
-        } else if (audioFormat === 7 && bitsPerSample === 8) {
-            encoding = 'PCMA';
-        } else {
-            throw new Error(
-                `Unsupported WAV format: audioFormat=${audioFormat}, bits=${bitsPerSample}`
-            );
+                } else if (id === 'data') {
+                    dataOffset = chunkDataPos;
+                    if (audioFormat != null) {
+                        break;
+                    }
+                }
+
+                const pad = size % 2;
+                offset = chunkDataPos + size + pad;
+            }
+
+            if (
+                audioFormat == null ||
+                channels == null ||
+                sampleRate == null ||
+                bitsPerSample == null ||
+                dataOffset == null
+            ) {
+                throw new Error('Invalid WAV: required fmt/data chunks not found');
+            }
+
+            let encoding: 'L16' | 'PCMU' | 'PCMA';
+            if (audioFormat === 1 && bitsPerSample === 16) {
+                encoding = 'L16';
+            } else if (audioFormat === 6 && bitsPerSample === 8) {
+                encoding = 'PCMU';
+            } else if (audioFormat === 7 && bitsPerSample === 8) {
+                encoding = 'PCMA';
+            } else {
+                throw new Error(
+                    `Unsupported WAV format: audioFormat=${audioFormat}, bits=${bitsPerSample}`
+                );
+            }
+
+            return {
+                encoding,
+                audioFormat,
+                sampleRate,
+                channels,
+                bitsPerSample,
+                bytesPerSample: bitsPerSample / 8,
+                dataOffset,
+            };
+        } finally {
+            await fh.close();
         }
-
-        // data chunk
-        if (buf.toString('ascii', 36, 40) !== 'data')
-            throw new Error('data chunk not found');
-
-        return {
-            encoding,
-            audioFormat,
-            sampleRate,
-            channels,
-            bitsPerSample,
-            bytesPerSample: bitsPerSample / 8,
-            dataOffset: 44
-        };
     }
 }
